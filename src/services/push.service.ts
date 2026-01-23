@@ -1,10 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
-import * as fs from 'fs';
+import fs from 'fs';
 
-@Injectable()
-export class PushService {
-  private logger = new Logger(PushService.name);
+class PushService {
   public ready = false;
 
   constructor() {
@@ -13,15 +10,15 @@ export class PushService {
 
       const cred = this.loadCredential();
       if (!cred) {
-        this.logger.warn('FCM not initialized: no credentials provided (this is OK in dev).');
+        console.warn('[PUSH] FCM not initialized: no credentials provided (OK in dev).');
         return;
       }
 
       admin.initializeApp({ credential: admin.credential.cert(cred as any) });
       this.ready = true;
-      this.logger.log('FCM initialized');
+      console.log('[PUSH] FCM initialized');
     } catch (e: any) {
-      this.logger.error(`FCM init error: ${e.message}`);
+      console.error('[PUSH] FCM init error:', e?.message);
     }
   }
 
@@ -32,15 +29,15 @@ export class PushService {
 
     if (jsonEnv && jsonEnv.trim().startsWith('{')) {
       try { return JSON.parse(jsonEnv); }
-      catch (e) { this.logger.error('Invalid FCM_SERVICE_ACCOUNT_JSON: ' + (e as Error).message); }
+      catch (e: any) { console.error('[PUSH] Invalid FCM_SERVICE_ACCOUNT_JSON:', e?.message); }
     }
 
     if (base64) {
       try {
         const decoded = Buffer.from(base64, 'base64').toString('utf8');
         return JSON.parse(decoded);
-      } catch (e) {
-        this.logger.error('Invalid FCM_SERVICE_ACCOUNT_BASE64: ' + (e as Error).message);
+      } catch (e: any) {
+        console.error('[PUSH] Invalid FCM_SERVICE_ACCOUNT_BASE64:', e?.message);
       }
     }
 
@@ -48,8 +45,8 @@ export class PushService {
       try {
         const content = fs.readFileSync(path, 'utf8');
         return JSON.parse(content);
-      } catch (e) {
-        this.logger.error('Cannot read FCM_SERVICE_ACCOUNT_PATH: ' + (e as Error).message);
+      } catch (e: any) {
+        console.error('[PUSH] Cannot read FCM_SERVICE_ACCOUNT_PATH:', e?.message);
       }
     }
 
@@ -65,3 +62,5 @@ export class PushService {
     });
   }
 }
+
+export const push = new PushService();

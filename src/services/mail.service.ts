@@ -1,11 +1,13 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import nodemailer from 'nodemailer';
 
-@Injectable()
-export class MailService implements OnModuleInit {
-  private transporter!: nodemailer.Transporter;
+class MailService {
+  private transporter: nodemailer.Transporter | null = null;
+  private initialized = false;
 
-  async onModuleInit() {
+  async init() {
+    if (this.initialized) return;
+    this.initialized = true;
+
     const host = process.env.SMTP_HOST;
     const port = Number(process.env.SMTP_PORT || 587);
     const user = process.env.SMTP_USER;
@@ -29,10 +31,12 @@ export class MailService implements OnModuleInit {
       console.log('[MAIL] SMTP listo:', host, `:${port}`, secure ? '(secure)' : '');
     } catch (e) {
       console.error('[MAIL] Falló verify() del SMTP:', e);
+      this.transporter = null;
     }
   }
 
   async send(to: string | string[], subject: string, html: string) {
+    if (!this.initialized) await this.init();
     if (!this.transporter) {
       console.warn('[MAIL] Transporter no inicializado. ¿Faltan variables SMTP?');
       return;
@@ -51,3 +55,5 @@ export class MailService implements OnModuleInit {
     return info;
   }
 }
+
+export const mail = new MailService();
