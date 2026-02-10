@@ -94,9 +94,11 @@ export async function requestPasswordReset(email: string) {
   }
 
   const token = makeResetToken(user.id, user.passwordHash);
+  const link =
+    `https://ecopulse.reimii.com/reset-password?code=${encodeURIComponent(token)}&email=${encodeURIComponent(user.email)}`;
 
   try {
-    await notifications.sendPasswordResetCode(user.email, token);
+    await notifications.sendPasswordResetCode(user.email, token, link);
   } catch (err) {
     console.error('[AUTH] Error enviando reset email:', err);
   }
@@ -112,7 +114,7 @@ export async function resetPassword(token: string, newPassword: string) {
 
   try {
     await notifications.notifyPasswordChanged(user.email);
-  } catch (_) {}
+  } catch (_) { }
 
   return { ok: true };
 }

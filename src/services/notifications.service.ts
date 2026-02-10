@@ -33,13 +33,16 @@ class NotificationsService {
     );
   }
 
-  async sendPasswordResetCode(to: string | string[], code: string) {
+  async sendPasswordResetCode(to: string | string[], code: string, link: string) {
     const toEmails = this.toEmailArray(to);
     if (!toEmails.length) return;
     await mail.send(
       toEmails,
       'Código de recuperación',
       `<h2>Recuperación de cuenta</h2>
+       <p>Para restablecer tu contraseña haz clic en el siguiente enlace:</p>
+       <p><a href="${link}">Restablecer contraseña</a></p>
+       <p>O</p>
        <p>Usa este código en la app para restablecer tu contraseña:</p>
        <p style="font-size:18px"><b>${code}</b></p>
        <p>Caduca en poco tiempo.</p>`,
