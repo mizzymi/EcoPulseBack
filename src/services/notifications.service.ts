@@ -72,7 +72,7 @@ class NotificationsService {
         where: { userId, revoked: false },
         select: { token: true },
       });
-      const tokenList = tokens.map((t) => t.token).filter(Boolean);
+      const tokenList = tokens.map((t: { token: any; }) => t.token).filter(Boolean);
       if (tokenList.length) {
         await push.sendToTokens(tokenList, {
           notification: { title: 'Seguridad de la cuenta', body: 'Tu contraseña ha sido actualizada' },
@@ -95,7 +95,7 @@ class NotificationsService {
     });
     const requester = await prisma.user.findUnique({ where: { id: requesterId } });
 
-    const toEmails = this.toEmailArray(admins.map((a) => a.user.email));
+    const toEmails = this.toEmailArray(admins.map((a: { user: { email: any; }; }) => a.user.email));
     if (toEmails.length) {
       await mail.send(
         toEmails,
@@ -106,12 +106,12 @@ class NotificationsService {
       );
     }
 
-    const adminIds = admins.map((a) => a.userId);
+    const adminIds = admins.map((a: { userId: any; }) => a.userId);
     const tokens = await prisma.deviceToken.findMany({
       where: { userId: { in: adminIds }, revoked: false },
       select: { token: true },
     });
-    const tokenList = tokens.map((t) => t.token).filter(Boolean);
+    const tokenList = tokens.map((t: { token: any; }) => t.token).filter(Boolean);
     if (tokenList.length) {
       await push.sendToTokens(tokenList, {
         notification: { title: 'Solicitud de unión', body: `${requester?.email ?? 'Alguien'} quiere unirse` },
@@ -147,7 +147,7 @@ class NotificationsService {
       where: { userId: requesterId, revoked: false },
       select: { token: true },
     });
-    const tokenList = tokens.map((t) => t.token).filter(Boolean);
+    const tokenList = tokens.map((t: { token: any; }) => t.token).filter(Boolean);
     if (tokenList.length) {
       await push.sendToTokens(tokenList, {
         notification: { title: approved ? 'Aprobado' : 'Rechazado', body: approved ? 'Ya formas parte de la cuenta' : 'No autorizado' },
