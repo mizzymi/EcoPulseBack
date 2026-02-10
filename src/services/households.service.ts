@@ -99,7 +99,7 @@ export async function myHouseholds(userId: string) {
     orderBy: { joinedAt: 'desc' },
   });
 
-  return ms.map((m) => ({
+  return ms.map((m: { household: { id: any; name: any; currency: any; }; role: any; joinedAt: any; }) => ({
     id: m.household.id,
     name: m.household.name,
     currency: m.household.currency,
@@ -186,7 +186,7 @@ export async function joinByCode(userId: string, code: string) {
     return { status: 'PENDING', householdId: invite.householdId };
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: { householdMember: { upsert: (arg0: { where: { householdId_userId: { householdId: any; userId: string; }; }; create: { householdId: any; userId: string; role: string; }; update: {}; }) => any; }; householdInvite: { update: (arg0: { where: { id: any; }; data: { uses: { increment: number; }; }; }) => any; }; }) => {
     await tx.householdMember.upsert({
       where: { householdId_userId: { householdId: invite.householdId, userId } },
       create: { householdId: invite.householdId, userId, role: 'MEMBER' },
@@ -228,7 +228,7 @@ export async function decideJoinRequest(
   if (jr.status !== 'PENDING') throw badRequest('La solicitud ya fue resuelta');
 
   if (decision === 'APPROVED') {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: { householdMember: { upsert: (arg0: { where: { householdId_userId: { householdId: string; userId: any; }; }; create: { householdId: string; userId: any; role: string; }; update: {}; }) => any; }; householdJoinRequest: { update: (arg0: { where: { id: string; }; data: { status: string; decidedAt: Date; decidedBy: string; }; }) => any; }; householdInvite: { update: (arg0: { where: { id: any; }; data: { uses: { increment: number; }; }; }) => any; }; }) => {
       await tx.householdMember.upsert({
         where: { householdId_userId: { householdId, userId: jr.userId } },
         create: { householdId, userId: jr.userId, role: 'MEMBER' },
@@ -262,7 +262,7 @@ export async function listMembers(userId: string, householdId: string) {
     orderBy: { joinedAt: 'asc' },
   });
 
-  return members.map((m) => ({
+  return members.map((m: { userId: any; role: any; joinedAt: any; user: any; }) => ({
     userId: m.userId,
     role: m.role,
     joinedAt: m.joinedAt,
@@ -419,7 +419,7 @@ export async function listSavingsGoals(userId: string, householdId: string) {
 
   const sums = await prisma.savingsTxn.groupBy({
     by: ['goalId', 'type'],
-    where: { goalId: { in: goals.map((g) => g.id) } },
+    where: { goalId: { in: goals.map((g: { id: any; }) => g.id) } },
     _sum: { amount: true },
   });
 
@@ -431,7 +431,7 @@ export async function listSavingsGoals(userId: string, householdId: string) {
     else g.withdraw += val;
   }
 
-  return goals.map((g) => {
+  return goals.map((g: { id: string | number; target: any; }) => {
     const agg = map[g.id] || { deposit: 0, withdraw: 0 };
     const saved = agg.deposit - agg.withdraw;
     const pct = Math.max(0, Math.min(100, (saved / Number(g.target)) * 100));
@@ -465,7 +465,7 @@ export async function deleteSavingsGoal(userId: string, householdId: string, goa
   const goal = await prisma.savingsGoal.findUnique({ where: { id: goalId } });
   if (!goal || goal.householdId !== householdId) throw notFound('Meta no encontrada');
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: { savingsTxn: { deleteMany: (arg0: { where: { goalId: string; }; }) => any; }; ledgerEntry: { deleteMany: (arg0: { where: { householdId: string; category: string; note: { contains: string; }; }; }) => any; }; savingsGoal: { delete: (arg0: { where: { id: string; }; }) => any; }; }) => {
     await tx.savingsTxn.deleteMany({ where: { goalId } });
     await tx.ledgerEntry.deleteMany({
       where: { householdId, category: 'Ahorros', note: { contains: `[AHORRO: ${goal.name}]` } },
@@ -493,7 +493,7 @@ export async function addSavingsTxn(
   const when = dto.occursAt ? new Date(dto.occursAt) : new Date();
   const cleanNote = dto.note?.trim() || null;
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: { savingsTxn: { create: (arg0: { data: { goalId: string; userId: string; type: any; amount: number; note: string | null; occursAt: Date; }; }) => any; }; ledgerEntry: { create: (arg0: { data: { householdId: string; userId: string; type: string; amount: number; category: string; note: string; occursAt: Date; }; }) => any; }; }) => {
     const savedTxn = await tx.savingsTxn.create({
       data: { goalId, userId, type: t as any, amount: amt, note: cleanNote, occursAt: when },
     });
@@ -646,7 +646,7 @@ export async function settlePlanned(userId: string, householdId: string, planned
   const occursAt = planned.dueDate;
   const entryType: EntryKind = planned.type as EntryKind;
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: { ledgerEntry: { create: (arg0: { data: { householdId: string; userId: string; type: EntryKind; amount: number; category: any; note: string; occursAt: any; }; }) => any; }; householdPlanned: { update: (arg0: { where: { id: any; }; data: { settledAt: Date; }; }) => any; }; }) => {
     await tx.ledgerEntry.create({
       data: {
         householdId,
@@ -681,7 +681,7 @@ export async function listRecurring(userId: string, householdId: string, q: { mo
   const { y, m } = monthRangeUtc(q.month);
   const dim = daysInMonth(y, m);
 
-  return defs.map((d) => {
+  return defs.map((d: { rrule: any; dayOfMonth: number | null; amount: any; }) => {
     let dom: number | null = null;
     const bymd = parseByMonthDay(d.rrule || undefined);
     if (bymd !== null) dom = bymd;
