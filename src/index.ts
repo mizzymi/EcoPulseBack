@@ -53,12 +53,11 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log(`API running on port ${port}`);
   });
-  
+
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal error:', err);
+  console.error("Fatal error:", err?.message || err);
+  console.error(err?.stack || "");
   process.exit(1);
-  
 });
