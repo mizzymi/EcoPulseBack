@@ -31,12 +31,16 @@ export async function register(email: string, password: string) {
 export async function login(email: string, password: string) {
   const e = (email ?? '').trim().toLowerCase();
   if (!e) throw badRequest('Email requerido');
+  if (!password) throw badRequest('Contraseña requerida');
+
+  // ✅ Same message for "email not found" and "wrong password"
+  const invalidCreds = () => unauthorized('Correo o contraseña equivocado');
 
   const user = await prisma.user.findUnique({ where: { email: e } });
-  if (!user) throw unauthorized('Credenciales inválidas');
+  if (!user) throw invalidCreds();
 
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) throw unauthorized('Credenciales inválidas');
+  if (!ok) throw invalidCreds();
 
   const accessToken = sign(user.id, user.email);
   return { accessToken, user: { id: user.id, email: user.email, createdAt: user.createdAt } };
@@ -63,6 +67,7 @@ function makeResetToken(userId: string, passwordHash: string) {
 async function verifyResetToken(token: string) {
   const parts = (token ?? '').split('.');
   if (parts.length !== 3) throw badRequest('Token inválido');
+
   const [userId, tsStr, sig] = parts;
   const ts = Number(tsStr);
   if (!userId || !Number.isFinite(ts)) throw badRequest('Token inválido');
@@ -88,7 +93,7 @@ export async function requestPasswordReset(email: string) {
 
   const user = await prisma.user.findUnique({ where: { email: e } });
   if (!user) {
-    // no revelamos existencia
+    // We don't reveal if the email exists
     console.warn('[AUTH] forgot: email no encontrado:', e);
     return;
   }

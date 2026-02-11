@@ -1,13 +1,16 @@
 import { prisma } from '../db/prisma';
+import { HouseholdRole, EntryType, SavingsTxnType } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { notifications } from './notifications.service';
 import { createHash, randomBytes } from 'crypto';
 import { badRequest, forbidden, notFound } from '../utils/httpError';
 
-type EntryKind = 'INCOME' | 'EXPENSE';
+type EntryKind = EntryType;
 
 function sha256(input: string) {
   return createHash('sha256').update(input).digest('hex');
 }
+
 function makeHumanCode(len = 8) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const buf = randomBytes(len);
@@ -70,13 +73,18 @@ async function assertMember(userId: string, householdId: string) {
 
 async function assertAdmin(userId: string, householdId: string) {
   const m = await assertMember(userId, householdId);
-  if (m.role !== 'OWNER' && m.role !== 'ADMIN') throw forbidden('Requiere rol ADMIN/OWNER');
+  if (m.role !== HouseholdRole.OWNER && m.role !== HouseholdRole.ADMIN) throw forbidden('Requiere rol ADMIN/OWNER');
 }
+
+/* ================= Households ================= */
 
 export async function createHousehold(userId: string, name: string, currency = 'EUR') {
   if (!name?.trim()) throw badRequest('Nombre requerido');
   const h = await prisma.household.create({ data: { name: name.trim(), currency: currency?.trim() || 'EUR' } });
-  await prisma.householdMember.create({ data: { householdId: h.id, userId, role: 'OWNER' } });
+
+  // ✅ Use Prisma enum
+  await prisma.householdMember.create({ data: { householdId: h.id, userId, role: HouseholdRole.OWNER } });
+
   return h;
 }
 
@@ -86,7 +94,7 @@ export async function deleteHousehold(userId: string, householdId: string) {
 
   const membership = await prisma.householdMember.findFirst({ where: { householdId, userId }, select: { role: true } });
   if (!membership) throw forbidden('Not a member of this household');
-  if (membership.role !== 'OWNER') throw forbidden('Only the owner can delete this household');
+  if (membership.role !== HouseholdRole.OWNER) throw forbidden('Only the owner can delete this household');
 
   await prisma.household.delete({ where: { id: householdId } });
   return { ok: true };
@@ -99,7 +107,7 @@ export async function myHouseholds(userId: string) {
     orderBy: { joinedAt: 'desc' },
   });
 
-  return ms.map((m: { household: { id: any; name: any; currency: any; }; role: any; joinedAt: any; }) => ({
+  return ms.map((m: { household: { id: any; name: any; currency: any }; role: any; joinedAt: any }) => ({
     id: m.household.id,
     name: m.household.name,
     currency: m.household.currency,
@@ -182,14 +190,17 @@ export async function joinByCode(userId: string, code: string) {
         data: { householdId: invite.householdId, userId, inviteId: invite.id },
       });
     }
-    try { await notifications.notifyNewJoinRequest(invite.householdId, userId); } catch (_) {}
+    try {
+      await notifications.notifyNewJoinRequest(invite.householdId, userId);
+    } catch (_) { }
     return { status: 'PENDING', householdId: invite.householdId };
   }
 
-  await prisma.$transaction(async (tx: { householdMember: { upsert: (arg0: { where: { householdId_userId: { householdId: any; userId: string; }; }; create: { householdId: any; userId: string; role: string; }; update: {}; }) => any; }; householdInvite: { update: (arg0: { where: { id: any; }; data: { uses: { increment: number; }; }; }) => any; }; }) => {
+  // ✅ Do NOT type tx manually — let Prisma infer it
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.householdMember.upsert({
       where: { householdId_userId: { householdId: invite.householdId, userId } },
-      create: { householdId: invite.householdId, userId, role: 'MEMBER' },
+      create: { householdId: invite.householdId, userId, role: HouseholdRole.MEMBER },
       update: {},
     });
 
@@ -228,10 +239,11 @@ export async function decideJoinRequest(
   if (jr.status !== 'PENDING') throw badRequest('La solicitud ya fue resuelta');
 
   if (decision === 'APPROVED') {
-    await prisma.$transaction(async (tx: { householdMember: { upsert: (arg0: { where: { householdId_userId: { householdId: string; userId: any; }; }; create: { householdId: string; userId: any; role: string; }; update: {}; }) => any; }; householdJoinRequest: { update: (arg0: { where: { id: string; }; data: { status: string; decidedAt: Date; decidedBy: string; }; }) => any; }; householdInvite: { update: (arg0: { where: { id: any; }; data: { uses: { increment: number; }; }; }) => any; }; }) => {
+    // ✅ Do NOT type tx manually — let Prisma infer it
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.householdMember.upsert({
         where: { householdId_userId: { householdId, userId: jr.userId } },
-        create: { householdId, userId: jr.userId, role: 'MEMBER' },
+        create: { householdId, userId: jr.userId, role: HouseholdRole.MEMBER },
         update: {},
       });
 
@@ -249,7 +261,9 @@ export async function decideJoinRequest(
     });
   }
 
-  try { await notifications.notifyJoinRequestDecision(householdId, jr.userId, decision); } catch (_) {}
+  try {
+    await notifications.notifyJoinRequestDecision(householdId, jr.userId, decision);
+  } catch (_) { }
   return { ok: true, status: decision };
 }
 
@@ -262,12 +276,107 @@ export async function listMembers(userId: string, householdId: string) {
     orderBy: { joinedAt: 'asc' },
   });
 
-  return members.map((m: { userId: any; role: any; joinedAt: any; user: any; }) => ({
+  return members.map((m: { userId: any; role: any; joinedAt: any; user: any }) => ({
     userId: m.userId,
     role: m.role,
     joinedAt: m.joinedAt,
     user: m.user,
   }));
+}
+
+// ================= Members management (role / kick) =================
+
+function coerceHouseholdRole(input: unknown): HouseholdRole {
+  const r = String(input ?? '').toUpperCase();
+  // No permitimos OWNER aquí (transfer ownership sería otro endpoint)
+  if (r !== 'ADMIN' && r !== 'MEMBER') throw badRequest('role inválido');
+  return r as HouseholdRole;
+}
+
+function canEditRole(actor: HouseholdRole, target: HouseholdRole, newRole: HouseholdRole) {
+  // Nadie puede cambiar al OWNER
+  if (target === HouseholdRole.OWNER) return false;
+
+  // OWNER puede cambiar ADMIN/MEMBER a otros (menos OWNER)
+  if (actor === HouseholdRole.OWNER) return true;
+
+  // ADMIN: solo puede tocar MEMBERS y solo dejarlo en MEMBER (no ascensos)
+  if (actor === HouseholdRole.ADMIN) {
+    if (target !== HouseholdRole.MEMBER) return false;
+    if (newRole !== HouseholdRole.MEMBER) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function canKick(actor: HouseholdRole, target: HouseholdRole) {
+  if (target === HouseholdRole.OWNER) return false;
+  if (actor === HouseholdRole.OWNER) return true;
+  if (actor === HouseholdRole.ADMIN) return target === HouseholdRole.MEMBER;
+  return false;
+}
+
+/**
+ * PATCH /households/:householdId/members/:targetUserId
+ * body: { role: "ADMIN" | "MEMBER" }
+ */
+export async function updateMemberRole(
+  actorUserId: string,
+  householdId: string,
+  targetUserId: string,
+  body: { role?: unknown },
+) {
+  const actor = await assertMember(actorUserId, householdId);
+
+  const target = await prisma.householdMember.findUnique({
+    where: { householdId_userId: { householdId, userId: targetUserId } },
+  });
+  if (!target) throw notFound('Miembro no encontrado');
+
+  const newRole = coerceHouseholdRole(body.role);
+
+  if (!canEditRole(actor.role, target.role, newRole)) {
+    throw forbidden('No tienes permisos para cambiar este rol');
+  }
+
+  return prisma.householdMember.update({
+    where: { householdId_userId: { householdId, userId: targetUserId } },
+    data: { role: newRole },
+    select: {
+      householdId: true,
+      userId: true,
+      role: true,
+      joinedAt: true,
+      user: { select: { id: true, email: true } },
+    },
+  });
+}
+
+/**
+ * DELETE /households/:householdId/members/:targetUserId
+ */
+export async function removeMember(
+  actorUserId: string,
+  householdId: string,
+  targetUserId: string,
+) {
+  const actor = await assertMember(actorUserId, householdId);
+
+  const target = await prisma.householdMember.findUnique({
+    where: { householdId_userId: { householdId, userId: targetUserId } },
+  });
+  if (!target) throw notFound('Miembro no encontrado');
+
+  if (!canKick(actor.role, target.role)) {
+    throw forbidden('No tienes permisos para expulsar a este miembro');
+  }
+
+  await prisma.householdMember.delete({
+    where: { householdId_userId: { householdId, userId: targetUserId } },
+  });
+
+  return { ok: true };
 }
 
 /* ================= Ledger ================= */
@@ -286,7 +395,7 @@ export async function addEntry(
     data: {
       householdId,
       userId,
-      type: t,
+      type: t, // ✅ EntryType
       amount: amountNum,
       category: dto.category?.trim() || null,
       note: dto.note?.trim() || null,
@@ -333,15 +442,15 @@ export async function monthlySummary(userId: string, householdId: string, month:
     _sum: { amount: true },
   });
 
-  const sumBy = (rows: { type: 'INCOME' | 'EXPENSE'; _sum: { amount: any } }[], t: 'INCOME' | 'EXPENSE') =>
+  const sumBy = (rows: { type: EntryType; _sum: { amount: any } }[], t: EntryType) =>
     Number(rows.find((r) => r.type === t)?._sum.amount ?? 0);
 
-  const income = sumBy(curr as any, 'INCOME');
-  const expense = sumBy(curr as any, 'EXPENSE');
+  const income = sumBy(curr as any, EntryType.INCOME);
+  const expense = sumBy(curr as any, EntryType.EXPENSE);
   const net = income - expense;
 
-  const prevIncome = sumBy(prev as any, 'INCOME');
-  const prevExpense = sumBy(prev as any, 'EXPENSE');
+  const prevIncome = sumBy(prev as any, EntryType.INCOME);
+  const prevExpense = sumBy(prev as any, EntryType.EXPENSE);
   const openingBalance = prevIncome - prevExpense;
   const closingBalance = openingBalance + net;
 
@@ -360,7 +469,7 @@ export async function updateEntry(
   if (!entry || entry.householdId !== householdId) throw notFound('Movimiento no encontrado');
 
   const m = await getMembership(userId, householdId);
-  const isAdmin = m && (m.role === 'OWNER' || m.role === 'ADMIN');
+  const isAdmin = m && (m.role === HouseholdRole.OWNER || m.role === HouseholdRole.ADMIN);
   if (entry.userId !== userId && !isAdmin) throw forbidden();
 
   const data: any = {};
@@ -384,7 +493,7 @@ export async function deleteEntry(userId: string, householdId: string, entryId: 
   if (!entry || entry.householdId !== householdId) throw notFound('Movimiento no encontrado');
 
   const m = await getMembership(userId, householdId);
-  const isAdmin = m && (m.role === 'OWNER' || m.role === 'ADMIN');
+  const isAdmin = m && (m.role === HouseholdRole.OWNER || m.role === HouseholdRole.ADMIN);
   if (entry.userId !== userId && !isAdmin) throw forbidden();
 
   await prisma.ledgerEntry.delete({ where: { id: entryId } });
@@ -419,7 +528,7 @@ export async function listSavingsGoals(userId: string, householdId: string) {
 
   const sums = await prisma.savingsTxn.groupBy({
     by: ['goalId', 'type'],
-    where: { goalId: { in: goals.map((g: { id: any; }) => g.id) } },
+    where: { goalId: { in: goals.map((g: { id: any }) => g.id) } },
     _sum: { amount: true },
   });
 
@@ -427,11 +536,11 @@ export async function listSavingsGoals(userId: string, householdId: string) {
   for (const s of sums as any) {
     const g = (map[s.goalId] ||= { deposit: 0, withdraw: 0 });
     const val = Number(s._sum.amount ?? 0);
-    if (s.type === 'DEPOSIT') g.deposit += val;
+    if (s.type === SavingsTxnType.DEPOSIT) g.deposit += val;
     else g.withdraw += val;
   }
 
-  return goals.map((g: { id: string | number; target: any; }) => {
+  return goals.map((g: any) => {
     const agg = map[g.id] || { deposit: 0, withdraw: 0 };
     const saved = agg.deposit - agg.withdraw;
     const pct = Math.max(0, Math.min(100, (saved / Number(g.target)) * 100));
@@ -465,7 +574,8 @@ export async function deleteSavingsGoal(userId: string, householdId: string, goa
   const goal = await prisma.savingsGoal.findUnique({ where: { id: goalId } });
   if (!goal || goal.householdId !== householdId) throw notFound('Meta no encontrada');
 
-  await prisma.$transaction(async (tx: { savingsTxn: { deleteMany: (arg0: { where: { goalId: string; }; }) => any; }; ledgerEntry: { deleteMany: (arg0: { where: { householdId: string; category: string; note: { contains: string; }; }; }) => any; }; savingsGoal: { delete: (arg0: { where: { id: string; }; }) => any; }; }) => {
+  // ✅ Do NOT type tx manually
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.savingsTxn.deleteMany({ where: { goalId } });
     await tx.ledgerEntry.deleteMany({
       where: { householdId, category: 'Ahorros', note: { contains: `[AHORRO: ${goal.name}]` } },
@@ -493,9 +603,16 @@ export async function addSavingsTxn(
   const when = dto.occursAt ? new Date(dto.occursAt) : new Date();
   const cleanNote = dto.note?.trim() || null;
 
-  return prisma.$transaction(async (tx: { savingsTxn: { create: (arg0: { data: { goalId: string; userId: string; type: any; amount: number; note: string | null; occursAt: Date; }; }) => any; }; ledgerEntry: { create: (arg0: { data: { householdId: string; userId: string; type: string; amount: number; category: string; note: string; occursAt: Date; }; }) => any; }; }) => {
+  return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const savedTxn = await tx.savingsTxn.create({
-      data: { goalId, userId, type: t as any, amount: amt, note: cleanNote, occursAt: when },
+      data: {
+        goalId,
+        userId,
+        type: t === 'DEPOSIT' ? SavingsTxnType.DEPOSIT : SavingsTxnType.WITHDRAW,
+        amount: amt,
+        note: cleanNote,
+        occursAt: when,
+      },
     });
 
     if (t === 'DEPOSIT') {
@@ -504,10 +621,10 @@ export async function addSavingsTxn(
         data: {
           householdId,
           userId,
-          type: 'EXPENSE',
+          type: EntryType.EXPENSE, // ✅ Prisma enum
           amount: amt,
           category: 'Ahorros',
-          note: `${marker} ${cleanNote ? ` — ${cleanNote}` : ''}`,
+          note: `${marker}${cleanNote ? ` — ${cleanNote}` : ''}`,
           occursAt: when,
         },
       });
@@ -532,8 +649,8 @@ export async function savingsGoalSummary(userId: string, householdId: string, go
 
   const grouped = await prisma.savingsTxn.groupBy({ by: ['type'], where: { goalId }, _sum: { amount: true } });
 
-  const dep = Number((grouped as any).find((g: any) => g.type === 'DEPOSIT')?._sum.amount ?? 0);
-  const wd = Number((grouped as any).find((g: any) => g.type === 'WITHDRAW')?._sum.amount ?? 0);
+  const dep = Number((grouped as any).find((g: any) => g.type === SavingsTxnType.DEPOSIT)?._sum.amount ?? 0);
+  const wd = Number((grouped as any).find((g: any) => g.type === SavingsTxnType.WITHDRAW)?._sum.amount ?? 0);
   const saved = dep - wd;
   const target = Number(goal.target);
   const progress = target > 0 ? Math.max(0, Math.min(100, (saved / target) * 100)) : 0;
@@ -577,7 +694,7 @@ export async function createPlanned(
       householdId,
       createdBy: userId,
       concept: dto.concept.trim(),
-      type,
+      type, // ✅ EntryType
       amount,
       dueDate,
       month: dto.month?.trim() || null,
@@ -600,7 +717,7 @@ export async function updatePlanned(
   if (!planned || planned.householdId !== householdId) throw notFound('Previsto no encontrado');
 
   const m = await getMembership(userId, householdId);
-  const isAdmin = m && (m.role === 'OWNER' || m.role === 'ADMIN');
+  const isAdmin = m && (m.role === HouseholdRole.OWNER || m.role === HouseholdRole.ADMIN);
   if (planned.createdBy !== userId && !isAdmin) throw forbidden();
 
   const data: any = {};
@@ -629,7 +746,7 @@ export async function deletePlanned(userId: string, householdId: string, planned
   if (!planned || planned.householdId !== householdId) throw notFound('Previsto no encontrado');
 
   const m = await getMembership(userId, householdId);
-  const isAdmin = m && (m.role === 'OWNER' || m.role === 'ADMIN');
+  const isAdmin = m && (m.role === HouseholdRole.OWNER || m.role === HouseholdRole.ADMIN);
   if (planned.createdBy !== userId && !isAdmin) throw forbidden();
 
   await prisma.householdPlanned.delete({ where: { id: plannedId } });
@@ -646,12 +763,13 @@ export async function settlePlanned(userId: string, householdId: string, planned
   const occursAt = planned.dueDate;
   const entryType: EntryKind = planned.type as EntryKind;
 
-  await prisma.$transaction(async (tx: { ledgerEntry: { create: (arg0: { data: { householdId: string; userId: string; type: EntryKind; amount: number; category: any; note: string; occursAt: any; }; }) => any; }; householdPlanned: { update: (arg0: { where: { id: any; }; data: { settledAt: Date; }; }) => any; }; }) => {
+  // ✅ Do NOT type tx manually
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.ledgerEntry.create({
       data: {
         householdId,
         userId,
-        type: entryType,
+        type: entryType, // ✅ EntryType
         amount: Number(planned.amount),
         category: planned.category,
         note: planned.notes ? `[PLANNED:${planned.concept}] ${planned.notes}` : `[PLANNED:${planned.concept}]`,
@@ -681,7 +799,7 @@ export async function listRecurring(userId: string, householdId: string, q: { mo
   const { y, m } = monthRangeUtc(q.month);
   const dim = daysInMonth(y, m);
 
-  return defs.map((d: { rrule: any; dayOfMonth: number | null; amount: any; }) => {
+  return defs.map((d: any) => {
     let dom: number | null = null;
     const bymd = parseByMonthDay(d.rrule || undefined);
     if (bymd !== null) dom = bymd;
@@ -726,7 +844,7 @@ export async function createRecurring(
       createdBy: userId,
       active: true,
       concept: dto.concept.trim(),
-      type,
+      type, // ✅ EntryType
       amount,
       dayOfMonth,
       rrule,
@@ -837,7 +955,7 @@ export async function postRecurringInstance(
     data: {
       householdId,
       userId,
-      type: rec.type as EntryKind,
+      type: rec.type as EntryKind, // ✅ EntryType
       amount: Number(rec.amount),
       category: rec.category,
       note: rec.notes ? `${canonicalText} ${rec.notes}` : `${canonicalText}`,

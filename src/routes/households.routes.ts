@@ -57,6 +57,16 @@ householdsRouter.get('/:id/members', asyncHandler(async (req, res) => {
   res.json(await svc.listMembers(req.user!.id, req.params.id));
 }));
 
+// ===== Members management (role / kick) =====
+
+householdsRouter.patch('/:id/members/:userId', asyncHandler(async (req, res) => {
+  res.json(await svc.updateMemberRole(req.user!.id, req.params.id, req.params.userId, req.body ?? {}));
+}));
+
+householdsRouter.delete('/:id/members/:userId', asyncHandler(async (req, res) => {
+  res.json(await svc.removeMember(req.user!.id, req.params.id, req.params.userId));
+}));
+
 /* ===== Ledger ===== */
 householdsRouter.post('/:id/entries', asyncHandler(async (req, res) => {
   res.json(await svc.addEntry(req.user!.id, req.params.id, req.body ?? {}));
