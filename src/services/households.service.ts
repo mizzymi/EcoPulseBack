@@ -268,7 +268,7 @@ export async function decideJoinRequest(
 }
 
 export async function listMembers(userId: string, householdId: string) {
-  await assertMember(userId, householdId);
+  const me = await assertMember(userId, householdId);
 
   const members = await prisma.householdMember.findMany({
     where: { householdId },
@@ -276,12 +276,16 @@ export async function listMembers(userId: string, householdId: string) {
     orderBy: { joinedAt: 'asc' },
   });
 
-  return members.map((m: { userId: any; role: any; joinedAt: any; user: any }) => ({
-    userId: m.userId,
-    role: m.role,
-    joinedAt: m.joinedAt,
-    user: m.user,
-  }));
+  return {
+    myRole: me.role,
+    members: members.map((m) => ({
+      userId: m.userId,
+      role: m.role,
+      joinedAt: m.joinedAt,
+      user: m.user,
+      isMe: m.userId === userId,
+    })),
+  };
 }
 
 // ================= Members management (role / kick) =================
