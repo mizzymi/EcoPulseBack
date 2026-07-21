@@ -2,6 +2,7 @@ import { prisma } from "../../db/prisma";
 import { badRequest } from "../../utils/httpError";
 import { assertAdmin } from "./guards";
 import { makeHumanCode, sha256 } from "./helpers";
+import { strongSecret } from "../../config";
 
 export async function createInvite(
     userId: string,
@@ -18,7 +19,7 @@ export async function createInvite(
     if (maxUses < 1 || maxUses > 999) throw badRequest("maxUses entre 1–999");
 
     const code = makeHumanCode(8);
-    const codeHash = sha256(code + (process.env.INVITE_PEPPER || "pepper"));
+    const codeHash = sha256(code + strongSecret("INVITE_PEPPER"));
     const expiresAt = new Date(Date.now() + expiresInHours * 3600_000);
 
     await prisma.householdInvite.create({

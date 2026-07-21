@@ -2,13 +2,13 @@ import type { SignOptions, VerifyOptions } from 'jsonwebtoken';
 
 const MIN_SECRET_LENGTH = 32;
 
-function required(name: string): string {
+export function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
 
-function strongSecret(name: string): string {
+export function strongSecret(name: string): string {
   const value = required(name);
   if (value.length < MIN_SECRET_LENGTH) {
     throw new Error(`${name} must contain at least ${MIN_SECRET_LENGTH} characters`);
@@ -20,8 +20,6 @@ export function validateEnvironment(): void {
   required('DATABASE_URL');
   strongSecret('JWT_SECRET');
   strongSecret('HASH');
-  strongSecret('RESET_SECRET');
-  strongSecret('RESET_PEPPER');
 
   const rounds = Number(process.env.BCRYPT_ROUNDS ?? '12');
   if (!Number.isInteger(rounds) || rounds < 10 || rounds > 15) {
@@ -44,8 +42,8 @@ export function jwtVerifyOptions(): VerifyOptions {
 
 export function jwtSignOptions(): SignOptions {
   return {
-    algorithm: 'HS256' as const,
-    expiresIn: '7d' as const,
+    algorithm: 'HS256',
+    expiresIn: '7d',
     issuer: process.env.JWT_ISSUER?.trim() || undefined,
     audience: process.env.JWT_AUDIENCE?.trim() || undefined,
   };
@@ -56,6 +54,6 @@ export function normalizeOrigin(url: string): string {
 }
 
 export function allowedOrigins(): string[] {
-  const raw = process.env.CORS_ORIGINS ?? process.env.APP_URL ?? '';
+  const raw = process.env.CORS_ORIGINS ?? process.env.APP_URL_MAIN ?? process.env.APP_URL ?? '';
   return raw.split(',').map(normalizeOrigin).filter(Boolean);
 }

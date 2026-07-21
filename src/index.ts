@@ -40,6 +40,14 @@ async function main() {
 
   app.get('/', (_req, res) => res.json({ message: 'EcoPulse API (Express)', version: '1.0.0' }));
   app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/ready', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ ok: true, database: 'connected' });
+    } catch {
+      res.status(503).json({ ok: false, database: 'unavailable' });
+    }
+  });
 
   app.use('/auth', authRouter);
   app.use('/households', householdsRouter);
@@ -52,13 +60,18 @@ async function main() {
   const server = http.createServer(app);
   notifications.setRealtime(initRealtime(server));
 
-  await prisma.$connect();
-  scheduleAutoPostToday();
-
   server.listen(port, '0.0.0.0', () => {
     console.log(`API running on port ${port}`);
     console.log(`CORS allowed origins: ${origins.join(', ') || '(none)'}`);
   });
+
+  try {
+    await prisma.$connect();
+    console.log('Database connected');
+    scheduleAutoPostToday();
+  } catch (err) {
+    console.error('Database unavailable at startup; API remains online and will retry on requests:', err);
+  }
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {

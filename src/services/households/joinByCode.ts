@@ -4,12 +4,13 @@ import { prisma } from "../../db/prisma";
 import { notifications } from "../notifications";
 import { badRequest } from "../../utils/httpError";
 import { sha256 } from "./helpers";
+import { strongSecret } from "../../config";
 
 export async function joinByCode(userId: string, code: string) {
     if (!code?.trim()) throw badRequest("Código requerido");
 
     const normalized = code.trim().toUpperCase();
-    const hash = sha256(normalized + (process.env.INVITE_PEPPER || "pepper"));
+    const hash = sha256(normalized + strongSecret("INVITE_PEPPER"));
 
     const invite = await prisma.householdInvite.findFirst({
         where: { codeHash: hash, revokedAt: null, expiresAt: { gt: new Date() } },
