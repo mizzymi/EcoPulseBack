@@ -1,3 +1,5 @@
+import type { SignOptions, VerifyOptions } from 'jsonwebtoken';
+
 const MIN_SECRET_LENGTH = 32;
 
 function required(name: string): string {
@@ -32,7 +34,7 @@ export function validateEnvironment(): void {
   }
 }
 
-export function jwtVerifyOptions() {
+export function jwtVerifyOptions(): VerifyOptions {
   return {
     algorithms: ['HS256'],
     issuer: process.env.JWT_ISSUER?.trim() || undefined,
@@ -40,7 +42,7 @@ export function jwtVerifyOptions() {
   };
 }
 
-export function jwtSignOptions() {
+export function jwtSignOptions(): SignOptions {
   return {
     algorithm: 'HS256' as const,
     expiresIn: '7d' as const,

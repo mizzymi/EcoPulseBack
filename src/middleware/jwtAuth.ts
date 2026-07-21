@@ -10,7 +10,9 @@ export function verifyAccessToken(token: string): JwtPayload {
   if (!secret) throw new Error('JWT_SECRET not set');
 
   const decoded = jwt.verify(token, secret, jwtVerifyOptions());
-  if (typeof decoded === 'string' || !decoded.sub) throw unauthorized();
+  if (typeof decoded === 'string' || !('sub' in decoded) || !decoded.sub) {
+    throw unauthorized();
+  }
   return decoded as JwtPayload;
 }
 
