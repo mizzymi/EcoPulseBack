@@ -1,7 +1,11 @@
-node_modules
+node_modules/
+dist/
 .env
-.dist
-/dist
-prisma/migrations
-docker-compose.yml
+.env.*
+!.env.example
+*.log
 service-account.json
+*service-account*.json
+.firebase/
+coverage/
+.DS_Store

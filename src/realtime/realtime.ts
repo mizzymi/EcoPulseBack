@@ -1,56 +1,71 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { allowedOrigins, normalizeOrigin } from '../config';
+import { verifyAccessToken } from '../middleware/jwtAuth';
 
 export type RealtimeApi = {
   io: Server;
-  emitToUser: (userId: string, event: string, payload: any) => void;
-  emitToManyUsers: (userIds: string[], event: string, payload: any) => void;
+  emitToUser: (userId: string, event: string, payload: unknown) => void;
+  emitToManyUsers: (userIds: string[], event: string, payload: unknown) => void;
 };
 
+function extractToken(client: Socket): string | null {
+  const authToken = client.handshake.auth?.token;
+  if (typeof authToken === 'string' && authToken.trim()) {
+    return authToken.replace(/^Bearer\s+/i, '').trim();
+  }
+
+  const header = client.handshake.headers.authorization;
+  if (typeof header === 'string' && header.startsWith('Bearer ')) {
+    return header.slice(7).trim();
+  }
+
+  return null;
+}
+
 export function initRealtime(server: HttpServer): RealtimeApi {
+  const origins = allowedOrigins();
   const io = new Server(server, {
-    cors: { origin: '*' },
+    cors: {
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (origins.includes(normalizeOrigin(origin))) return callback(null, true);
+        return callback(new Error('Origin not allowed'));
+      },
+      credentials: true,
+    },
     path: '/realtime',
   });
 
-  const socketUser = new Map<string, string>();
-
-  io.on('connection', (client: Socket) => {
+  io.use((client, next) => {
     try {
-      const auth = client.handshake.headers['authorization'] as string | undefined;
-      if (!auth?.startsWith('Bearer ')) return client.disconnect(true);
-      const token = auth.slice(7);
-      // Mantengo el comportamiento del Nest original: token "dev:<userId>"
-      if (!token.startsWith('dev:')) return client.disconnect(true);
-      const userId = token.split(':')[1];
-      if (!userId) return client.disconnect(true);
+      const token = extractToken(client);
+      if (!token) return next(new Error('Unauthorized'));
 
-      socketUser.set(client.id, userId);
-      client.join(`user:${userId}`);
-      // eslint-disable-next-line no-console
-      console.log(`[RT] socket ${client.id} conectado como user:${userId}`);
-
-      client.on('disconnect', () => {
-        const uid = socketUser.get(client.id);
-        if (uid) {
-          // eslint-disable-next-line no-console
-          console.log(`[RT] socket ${client.id} (user:${uid}) desconectado`);
-        }
-        socketUser.delete(client.id);
-      });
-    } catch (e: any) {
-      // eslint-disable-next-line no-console
-      console.error('[RT] Error de conexión:', e?.message);
-      client.disconnect(true);
+      const decoded = verifyAccessToken(token);
+      client.data.userId = decoded.sub;
+      return next();
+    } catch {
+      return next(new Error('Unauthorized'));
     }
   });
 
-  const emitToUser = (userId: string, event: string, payload: any) => {
+  io.on('connection', (client: Socket) => {
+    const userId = client.data.userId as string;
+    client.join(`user:${userId}`);
+    console.log(`[RT] socket ${client.id} connected as user:${userId}`);
+
+    client.on('disconnect', () => {
+      console.log(`[RT] socket ${client.id} (user:${userId}) disconnected`);
+    });
+  });
+
+  const emitToUser = (userId: string, event: string, payload: unknown) => {
     io.to(`user:${userId}`).emit(event, payload);
   };
 
-  const emitToManyUsers = (userIds: string[], event: string, payload: any) => {
-    userIds.forEach((uid) => emitToUser(uid, event, payload));
+  const emitToManyUsers = (userIds: string[], event: string, payload: unknown) => {
+    [...new Set(userIds)].forEach((uid) => emitToUser(uid, event, payload));
   };
 
   return { io, emitToUser, emitToManyUsers };

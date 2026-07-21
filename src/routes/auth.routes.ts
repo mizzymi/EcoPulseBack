@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { asyncHandler } from '../utils/asyncHandler';
-import * as auth from '../services/auth.service';
+import * as auth from '../services';
 import { jwtAuth } from '../middleware/jwtAuth';
 
 export const authRouter = Router();
 
 authRouter.post('/register', asyncHandler(async (req, res) => {
-  const { email, password } = req.body ?? {};
-  const out = await auth.register(email, password);
+  const { email, username, password } = req.body ?? {};
+  const out = await auth.register(email, username, password,);
   res.json(out);
 }));
 
@@ -18,7 +18,7 @@ authRouter.post('/login', asyncHandler(async (req, res) => {
 }));
 
 authRouter.get('/me', jwtAuth, asyncHandler(async (req, res) => {
-  const out = await auth.me(req.user!.id);
+  const out = await auth.findUserById(req.user!.id);
   res.json(out);
 }));
 
@@ -29,7 +29,7 @@ authRouter.post('/forgot-password', asyncHandler(async (req, res) => {
 }));
 
 authRouter.post('/reset-password', asyncHandler(async (req, res) => {
-  const { token, password } = req.body ?? {};
-  const out = await auth.resetPassword(token, password);
+  const { email, token, newPassword } = req.body ?? {};
+  const out = await auth.resetPassword(email, token, newPassword);
   res.json(out);
 }));

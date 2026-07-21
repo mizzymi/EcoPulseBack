@@ -1,8 +1,18 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { jwtVerifyOptions } from '../config';
 import { unauthorized } from '../utils/httpError';
 
-type JwtPayload = { sub?: string; email?: string } & Record<string, any>;
+type JwtPayload = jwt.JwtPayload & { sub?: string; email?: string };
+
+export function verifyAccessToken(token: string): JwtPayload {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET not set');
+
+  const decoded = jwt.verify(token, secret, jwtVerifyOptions());
+  if (typeof decoded === 'string' || !decoded.sub) throw unauthorized();
+  return decoded as JwtPayload;
+}
 
 export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   const auth = req.headers.authorization || '';
@@ -12,16 +22,10 @@ export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if (!token) return next(unauthorized());
 
   try {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET not set');
-
-    const decoded = jwt.verify(token, secret) as JwtPayload;
-    const id = decoded.sub;
-    if (!id) return next(unauthorized());
-
-    req.user = { id, email: decoded.email };
+    const decoded = verifyAccessToken(token);
+    req.user = { id: decoded.sub!, email: decoded.email };
     return next();
-  } catch (e) {
+  } catch {
     return next(unauthorized());
   }
 }

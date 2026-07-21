@@ -9,6 +9,10 @@ export class HttpError extends Error {
   }
 }
 
+export function conflict(message = 'Conflicto', details?: unknown) {
+  return new HttpError(409, message, details);
+}
+
 export function badRequest(message: string, details?: unknown) {
   return new HttpError(400, message, details);
 }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { jwtAuth } from '../middleware/jwtAuth';
 import { asyncHandler } from '../utils/asyncHandler';
-import { registerDevice } from '../services/devices.service';
+import { registerDevice } from '../services/registerDevice';
 
 export const devicesRouter = Router();
 devicesRouter.use(jwtAuth);
